@@ -1,0 +1,16 @@
+#!/bin/sh
+# Sets environment variables for the script
+
+# Modify with your CPanel information and rename the file to profile.cpanel
+# Update the source command in ddns.wanup to provide the fullpath for this file
+
+LOGPATH=/tmp
+CPANEL_URL=https://mydomain.com:2083/cpsess888888888
+CPANEL_AUTH_BASE64=dXNlcjpwYXNzd29yZA==
+CPANEL_DOMAIN=mydomain.com
+CPANEL_DOMAIN_ZONE_LINE=88
+CPANEL_DOMAIN_ZONE_NAME=subdomain
+CPANEL_DOMAIN_ZONE_TYPE=A
+CPANEL_DOMAIN_ZONE_TTL=300
+CPANEL_DOMAIN_ZONE_CLASS=IN=300
+CPANEL_DOMAIN_ZONE_CLASS=IN

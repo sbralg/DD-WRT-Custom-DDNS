@@ -1,0 +1,107 @@
+#!/bin/sh 
+# Made by Alexandre Gomes 2021
+# https://github.com/blackmage568/DD-WRT-CPanel-DDNS
+
+# Specify the full path of the profile
+source /tmp/mnt/sda1/router/scripts/ddns/profile.cpanel
+
+# Initialize log
+LOGFILE="$LOGPATH/update_DNS_IP-$$.log"
+
+# Check if a lock already exists (avoid duplicate wanup processes)
+LOCKFILE=/tmp/wanupscript.lock
+if [ ! -f "$LOCKFILE" ]; then
+	echo "$(date +"%Y-%m-%d %H:%M:%S") INFO - Creating lockfile $LOCKFILE" >> $LOGFILE
+	touch $LOCKFILE
+
+	# Check if NTP already updated the clock (necessary for https)
+	counter=0
+	while true; do
+		if [ $(date +"%Y") -lt 2021 ]; then
+			echo "$(date +"%Y-%m-%d %H:%M:%S") WARN - Clock not yet updated. Retrying in 15 seconds" >> $LOGFILE
+			counter=$((counter+1))
+			sleep 15
+
+			# Commands to set and restart NTP
+			# ntpclient pool.ntp.br
+			# stopservice process_monitor
+			# startservice process_monitor
+
+		elif [[ "$counter" -gt 20 ]]; then
+			echo "$(date +"%Y-%m-%d %H:%M:%S") ERROR - Clock did not update. Is NTP enabled and working?" >> $LOGFILE
+			exit 1
+		else
+			echo "$(date +"%Y-%m-%d %H:%M:%S") INFO - Clock seems updated" >> $LOGFILE
+			break
+		fi
+	done
+	
+	# Update log name
+	NEWLOGFILE="$LOGPATH/update_DNS_IP-$(date +"%Y_%m_%d_%I_%M_%p")-$$.log"
+	mv $LOGFILE $NEWLOGFILE
+	LOGFILE=$NEWLOGFILE
+
+	CURLGET="/tmp/curlGET.log"
+	CURLPUT="/tmp/curlPUT.log"
+
+	# Your Internet Interface 
+	inet_if=ppp0 
+
+	# Get IP registered in CPanel ZoneEdit
+	dns_ip=""
+	counter=0
+	while true; do
+		echo "$(date +"%Y-%m-%d %H:%M:%S") INFO - Trying to get current IP registered in CPanel" >> $LOGFILE
+		curl -i -o $CURLGET -s -H "Authorization: Basic $CPANEL_AUTH_BASE64" "$CPANEL_URL/json-api/cpanel?cpanel_jsonapi_apiversion=2&cpanel_jsonapi_module=ZoneEdit&cpanel_jsonapi_func=fetchzone_records&domain=$CPANEL_DOMAIN&line=$CPANEL_DOMAIN_ZONE_LINE"
+		(echo;cat $CURLGET;echo) >> $LOGFILE
+		dns_ip=$(tail -1 $CURLGET | jq -r '.cpanelresult.data[0].address')
+
+		# If no IP is returned, try again for a few times
+		if [ -z $dns_ip ]; then
+			if [[ "$counter" -le 8 ]]; then
+				echo "$(date +"%Y-%m-%d %H:%M:%S") WARN - IP could not be retrieved. Retrying in 15 seconds" >> $LOGFILE
+				counter=$((counter+1))
+				sleep 15
+			else
+				echo "$(date +"%Y-%m-%d %H:%M:%S") ERROR - IP could not be retrieved from DNS. Is the curl command correct?" >> $LOGFILE
+				exit 2
+			fi
+		else
+			echo "$(date +"%Y-%m-%d %H:%M:%S") INFO - Current DNS IP: $dns_ip" >> $LOGFILE
+			break
+		fi
+	done
+
+	# Get current WAN IP from the internet interface of the router
+	current_ip=`ifconfig ${inet_if} | sed '/.*inet addr:/!d;s///;s/ .*//'`
+	echo "$(date +"%Y-%m-%d %H:%M:%S") INFO - Current WAN IP: $current_ip" >> $LOGFILE
+
+	# Check if the current IP is different and needs to be updated
+	if [ "$current_ip" != "$dns_ip" ]; then
+
+		# Update IP in CPanel
+		echo "$(date +"%Y-%m-%d %H:%M:%S") INFO - Updating DNS IP" >> $LOGFILE
+		curl -i -o $CURLPUT -s -H "Authorization: Basic $CPANEL_AUTH_BASE64" "$CPANEL_URL/json-api/cpanel?cpanel_jsonapi_apiversion=2&cpanel_jsonapi_module=ZoneEdit&cpanel_jsonapi_func=edit_zone_record&Line=$CPANEL_DOMAIN_ZONE_LINE&domain=$CPANEL_DOMAIN&name=$CPANEL_DOMAIN_ZONE_NAME&type=$CPANEL_DOMAIN_ZONE_TYPE&ttl=$CPANEL_DOMAIN_ZONE_TTL&class=$CPANEL_DOMAIN_ZONE_CLASS&address=$current_ip"
+		(echo;cat $CURLPUT;echo) >> $LOGFILE
+
+		# Check if IP was ineed updated
+		echo "$(date +"%Y-%m-%d %H:%M:%S") INFO - Checking if DNS IP was updated successfully" >> $LOGFILE
+		curl -i -o $CURLGET -s -H "Authorization: Basic $CPANEL_AUTH_BASE64" "$CPANEL_URL/json-api/cpanel?cpanel_jsonapi_apiversion=2&cpanel_jsonapi_module=ZoneEdit&cpanel_jsonapi_func=fetchzone_records&domain=$CPANEL_DOMAIN&line=$CPANEL_DOMAIN_ZONE_LINE"
+		(echo;cat $CURLGET;echo) >> $LOGFILE
+		dns_ip=$(tail -1 $CURLGET | jq -r '.cpanelresult.data[0].address')
+
+		if [ "$current_ip" != "$dns_ip" ]; then
+			echo "$(date +"%Y-%m-%d %H:%M:%S") ERROR - Failed to update DNS IP" >> $LOGFILE
+		else
+			echo "$(date +"%Y-%m-%d %H:%M:%S") INFO - DNS IP updated successfully" >> $LOGFILE
+		fi
+	else
+		echo "$(date +"%Y-%m-%d %H:%M:%S") INFO - DNS IP already updated" >> $LOGFILE
+	fi
+
+	# Removing lockfile
+	echo "$(date +"%Y-%m-%d %H:%M:%S") INFO - Removing lockfile $LOCKFILE" >> $LOGFILE
+	rm -f $LOCKFILE
+else
+	echo "$(date +"%Y-%m-%d %H:%M:%S") ERROR - Lockfile $LOCKFILE already exists" >> $LOGFILE
+fi
