@@ -29,6 +29,8 @@ if [ ! -f "$LOCKFILE" ]; then
 
 		elif [[ "$counter" -gt 20 ]]; then
 			echo "$(date +"%Y-%m-%d %H:%M:%S") ERROR - Clock did not update. Is NTP enabled and working?" >> $LOGFILE
+			echo "$(date +"%Y-%m-%d %H:%M:%S") INFO - Removing lockfile $LOCKFILE" >> $LOGFILE
+			rm -f $LOCKFILE
 			exit 1
 		else
 			echo "$(date +"%Y-%m-%d %H:%M:%S") INFO - Clock seems updated" >> $LOGFILE
@@ -64,6 +66,8 @@ if [ ! -f "$LOCKFILE" ]; then
 				sleep 15
 			else
 				echo "$(date +"%Y-%m-%d %H:%M:%S") ERROR - IP could not be retrieved from DNS. Is the curl command correct?" >> $LOGFILE
+				echo "$(date +"%Y-%m-%d %H:%M:%S") INFO - Removing lockfile $LOCKFILE" >> $LOGFILE
+				rm -f $LOCKFILE
 				exit 2
 			fi
 		else
@@ -98,10 +102,10 @@ if [ ! -f "$LOCKFILE" ]; then
 	else
 		echo "$(date +"%Y-%m-%d %H:%M:%S") INFO - DNS IP already updated" >> $LOGFILE
 	fi
-
 	# Removing lockfile
 	echo "$(date +"%Y-%m-%d %H:%M:%S") INFO - Removing lockfile $LOCKFILE" >> $LOGFILE
 	rm -f $LOCKFILE
 else
 	echo "$(date +"%Y-%m-%d %H:%M:%S") ERROR - Lockfile $LOCKFILE already exists" >> $LOGFILE
+	exit 5
 fi
