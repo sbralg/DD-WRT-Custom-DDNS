@@ -56,7 +56,7 @@ if [ ! -f "$LOCKFILE" ]; then
 		echo "$(date +"%Y-%m-%d %H:%M:%S") INFO - Trying to get current IP registered in CPanel" >> $LOGFILE
 		curl -i -o $CURLGET -s -H "Authorization: Basic $CPANEL_AUTH_BASE64" "$CPANEL_URL/json-api/cpanel?cpanel_jsonapi_apiversion=2&cpanel_jsonapi_module=ZoneEdit&cpanel_jsonapi_func=fetchzone_records&domain=$CPANEL_DOMAIN&line=$CPANEL_DOMAIN_ZONE_LINE"
 		(echo;cat $CURLGET;echo) >> $LOGFILE
-		dns_ip=$(tail -1 $CURLGET | jq -r '.cpanelresult.data[0].address')
+		dns_ip=$(tail -1 /tmp/curlGET.log | grep -oE '((1?[0-9][0-9]?|2[0-4][0-9]|25[0-5])\.){3}(1?[0-9][0-9]?|2[0-4][0-9]|25[0-5])' | tail -1)
 
 		# If no IP is returned, try again for a few times
 		if [ -z $dns_ip ]; then
