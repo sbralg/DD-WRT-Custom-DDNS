@@ -1,0 +1,1 @@
+GOOS=linux GOARCH=mips GOMIPS=softfloat go build -a -gcflags=all="-l -B -wb=false" -ldflags='-w -s'

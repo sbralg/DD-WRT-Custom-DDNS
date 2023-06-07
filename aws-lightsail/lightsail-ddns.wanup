@@ -1,0 +1,104 @@
+#!/bin/sh 
+# Made by Alexandre Gomes 2023
+# https://github.com/sbralg/DD-WRT-Custom-DDNS-Scripts
+
+# Specify the full path of the profile
+source /jffs/misc/aws.env
+
+cleanup () {
+    echo "$(date +"%Y-%m-%d %H:%M:%S") INFO - Removing lockfile $LOCKFILE" >> $LOGFILE
+    rm -f $LOCKFILE
+    exit $1
+}
+
+PATH=$DDNSPATH:$PATH
+
+# Initialize log
+LOGFILE="/tmp/update_DNS_IP-$$.log"
+
+# Keep only the 10 most recent log files
+logFiles=$(ls -t $LOGPATH/update_DNS_IP*.log)
+
+if [[ "$nLogFiles" -gt 10 ]]; then
+    counter=1
+    for log in $logFiles; do
+        if [ $counter -gt 10 ]; then rm -f $log; fi
+        counter=$((counter+1))
+    done
+fi
+
+HOST_NAME="$HOST_NAME.$DOMAIN_NAME"
+
+# Check if a lock already exists (avoid duplicate wanup processes)
+LOCKFILE=/tmp/wanupscript.lock
+if [ ! -f "$LOCKFILE" ]; then
+    echo "$(date +"%Y-%m-%d %H:%M:%S") INFO - Creating lockfile $LOCKFILE" >> $LOGFILE
+    touch $LOCKFILE
+
+    # Check if NTP already updated the clock (necessary for https)
+    counter=0
+    while true; do
+        if [ $(date +"%Y") -lt 2021 ]; then
+            echo "$(date +"%Y-%m-%d %H:%M:%S") WARN - Clock not yet updated. Retrying in 15 seconds" >> $LOGFILE
+            counter=$((counter+1))
+            sleep 15
+
+            # Commands to set and restart NTP
+            # ntpclient pool.ntp.br
+            # stopservice process_monitor
+            # startservice process_monitor
+
+        elif [[ "$counter" -gt 20 ]]; then
+            echo "$(date +"%Y-%m-%d %H:%M:%S") ERROR - Clock did not update. Is NTP enabled and working?" >> $LOGFILE
+            cleanup 1
+        else
+            echo "$(date +"%Y-%m-%d %H:%M:%S") INFO - Clock seems updated" >> $LOGFILE
+            break
+        fi
+    done
+    
+    # Update log name
+    if [ -d $LOGPATH ]; then
+        NEWLOGFILE="$LOGPATH/update_DNS_IP-$(date +"%Y_%m_%d_%I_%M_%p")-$$.log"
+        if touch $NEWLOGFILE > /dev/null 2>&1; then
+            mv $LOGFILE $NEWLOGFILE
+            LOGFILE=$NEWLOGFILE
+        else
+            echo "$(date +"%Y-%m-%d %H:%M:%S") ERROR - Unable to write log file to the $LOGPATH directory" >> $LOGFILE
+            cleanup 1
+        fi
+    else
+        echo "$(date +"%Y-%m-%d %H:%M:%S") ERROR - Directory $LOGPATH doesn't exist" >> $LOGFILE
+        cleanup 1
+    fi
+
+    # Your Internet Interface 
+    inet_if=ppp0 
+
+    wan_ip=$(nvram get wan_ipaddr)
+    echo "$(date +"%Y-%m-%d %H:%M:%S") INFO - Current WAN IP: $wan_ip" >> $LOGFILE
+
+    if [ ! -n "${wan_ip}" ]; then
+        echo "$(date +"%Y-%m-%d %H:%M:%S") ERROR - Error updating DNS entry, wan_ip is empty" >> $LOGFILE
+        cleanup 1
+    fi
+
+    # Check if lightsaildns-update binary is found
+    if ! type lightsaildns-update > /dev/null 2>&1; then
+        echo "$(date +"%Y-%m-%d %H:%M:%S") ERROR - lightsaildns-update not found in the $DDNSPATH path provided" >> $LOGFILE
+        cleanup 1
+    fi
+
+    # Execute lightsaildns-update
+	echo -e "$(date +"%Y-%m-%d %H:%M:%S") INFO - Executing lightsaildns-update\n" >> $LOGFILE
+	lightsaildns-update "${DOMAIN_NAME}" "${HOST_NAME}" "${wan_ip}" >> $LOGFILE 2>&1
+    if [ $? -eq 0 ]; then
+        echo -e "\n$(date +"%Y-%m-%d %H:%M:%S") INFO - The DNS entry was updated successfully" >> $LOGFILE
+    else
+        echo -e"\n$(date +"%Y-%m-%d %H:%M:%S") ERROR - lightsaildns-update failed to update the DNS entry" >> $LOGFILE
+    fi
+    cleanup 0
+else
+    echo "$(date +"%Y-%m-%d %H:%M:%S") ERROR - Lockfile $LOCKFILE already exists" >> $LOGFILE
+    exit 1
+fi
